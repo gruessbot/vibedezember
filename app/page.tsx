@@ -7,6 +7,7 @@ export default function Home() {
   const [events, setEvents] = useState<Event[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -14,6 +15,10 @@ export default function Home() {
     time: '',
     createdBy: '',
   });
+  const [currentUser, setCurrentUser] = useState('');
+  const [filterPerson, setFilterPerson] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
 
   // Termine laden
   useEffect(() => {
@@ -30,24 +35,149 @@ export default function Home() {
     }
   };
 
-  // Neuen Termin erstellen
+  // Neuen Termin erstellen oder bearbeiten
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (editingEvent) {
+      // Termin bearbeiten
+      try {
+        const response = await fetch('/api/events', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingEvent.id,
+            ...formData,
+          }),
+        });
+
+        if (response.ok) {
+          setFormData({ title: '', description: '', date: '', time: '', createdBy: '' });
+          setShowForm(false);
+          setEditingEvent(null);
+          fetchEvents();
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Fehler beim Bearbeiten');
+        }
+      } catch (error) {
+        console.error('Fehler beim Bearbeiten des Termins:', error);
+        alert('Fehler beim Bearbeiten des Termins');
+      }
+    } else {
+      // Neuen Termin erstellen
+      try {
+        const response = await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        if (response.ok) {
+          setCurrentUser(formData.createdBy);
+          setFormData({ title: '', description: '', date: '', time: '', createdBy: formData.createdBy });
+          setShowForm(false);
+          fetchEvents();
+        }
+      } catch (error) {
+        console.error('Fehler beim Erstellen des Termins:', error);
+      }
+    }
+  };
+
+  // Termin löschen
+  const handleDelete = async (event: Event) => {
+    const userName = prompt('Gib deinen Namen ein, um zu bestätigen:');
+    if (!userName) return;
+
     try {
-      const response = await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+      const response = await fetch(`/api/events?id=${event.id}&createdBy=${encodeURIComponent(userName)}`, {
+        method: 'DELETE',
       });
 
       if (response.ok) {
-        setFormData({ title: '', description: '', date: '', time: '', createdBy: '' });
-        setShowForm(false);
         fetchEvents();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Fehler beim Löschen');
       }
     } catch (error) {
-      console.error('Fehler beim Erstellen des Termins:', error);
+      console.error('Fehler beim Löschen:', error);
+      alert('Fehler beim Löschen des Termins');
     }
+  };
+
+  // Termin bearbeiten vorbereiten
+  const handleEdit = (event: Event) => {
+    const userName = prompt('Gib deinen Namen ein, um zu bestätigen:');
+    if (!userName || userName !== event.createdBy) {
+      alert('Du kannst nur deine eigenen Termine bearbeiten');
+      return;
+    }
+
+    setEditingEvent(event);
+    setFormData({
+      title: event.title,
+      description: event.description,
+      date: event.date,
+      time: event.time,
+      createdBy: event.createdBy,
+    });
+    setShowForm(true);
+  };
+
+  // Export als iCal
+  const exportIcal = () => {
+    const icalEvents = events.map((event) => {
+      const start = new Date(`${event.date}T${event.time}`);
+      const end = new Date(start.getTime() + 60 * 60 * 1000); // 1 Stunde
+
+      return `BEGIN:VEVENT
+UID:${event.id}@vibedezember
+DTSTAMP:${new Date(event.createdAt).toISOString().replace(/[-:]/g, '').split('.')[0]}Z
+DTSTART:${start.toISOString().replace(/[-:]/g, '').split('.')[0]}Z
+DTEND:${end.toISOString().replace(/[-:]/g, '').split('.')[0]}Z
+SUMMARY:${event.title}
+DESCRIPTION:${event.description.replace(/\n/g, '\\n')}
+ORGANIZER:${event.createdBy}
+END:VEVENT`;
+    }).join('\n');
+
+    const ical = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Vibedezember//Terminkalender//DE
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+${icalEvents}
+END:VCALENDAR`;
+
+    const blob = new Blob([ical], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'termine.ics';
+    a.click();
+  };
+
+  // Export als CSV
+  const exportCsv = () => {
+    const csv = [
+      ['Titel', 'Beschreibung', 'Datum', 'Uhrzeit', 'Erstellt von'].join(';'),
+      ...events.map((event) => [
+        event.title,
+        event.description,
+        event.date,
+        event.time,
+        event.createdBy,
+      ].map(field => `"${field}"`).join(';')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'termine.csv';
+    a.click();
   };
 
   // Kalenderfunktionen
@@ -69,7 +199,23 @@ export default function Home() {
       day
     ).toISOString().split('T')[0];
 
-    return events.filter((event) => event.date === dateStr);
+    return getFilteredEvents().filter((event) => event.date === dateStr);
+  };
+
+  // Gefilterte Termine
+  const getFilteredEvents = () => {
+    return events.filter((event) => {
+      if (filterPerson && !event.createdBy.toLowerCase().includes(filterPerson.toLowerCase())) {
+        return false;
+      }
+      if (filterDateFrom && event.date < filterDateFrom) {
+        return false;
+      }
+      if (filterDateTo && event.date > filterDateTo) {
+        return false;
+      }
+      return true;
+    });
   };
 
   const { daysInMonth, startingDayOfWeek } = getDaysInMonth(currentDate);
@@ -89,6 +235,11 @@ export default function Home() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
   };
 
+  // Alle Personen für Filter
+  const allPeople = Array.from(new Set(events.map((e) => e.createdBy))).sort();
+
+  const filteredEvents = getFilteredEvents();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
@@ -100,6 +251,80 @@ export default function Home() {
           <p className="text-gray-600">
             Trage deine Termine ein und sehe, was andere geplant haben
           </p>
+        </div>
+
+        {/* Filter & Export */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Filter & Export</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Nach Person filtern
+              </label>
+              <select
+                value={filterPerson}
+                onChange={(e) => setFilterPerson(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              >
+                <option value="">Alle Personen</option>
+                {allPeople.map((person) => (
+                  <option key={person} value={person}>
+                    {person}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Von Datum
+              </label>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Bis Datum
+              </label>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => {
+                setFilterPerson('');
+                setFilterDateFrom('');
+                setFilterDateTo('');
+              }}
+              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition"
+            >
+              Filter zurücksetzen
+            </button>
+            <button
+              onClick={exportIcal}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+            >
+              📅 Als iCal exportieren
+            </button>
+            <button
+              onClick={exportCsv}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition"
+            >
+              📊 Als CSV exportieren
+            </button>
+          </div>
         </div>
 
         {/* Kalender Navigation */}
@@ -133,12 +358,10 @@ export default function Home() {
 
           {/* Kalendertage */}
           <div className="grid grid-cols-7 gap-2">
-            {/* Leere Zellen für Tage vor dem ersten Tag des Monats */}
             {Array.from({ length: startingDayOfWeek }).map((_, index) => (
               <div key={`empty-${index}`} className="aspect-square" />
             ))}
 
-            {/* Tage des Monats */}
             {Array.from({ length: daysInMonth }).map((_, index) => {
               const day = index + 1;
               const dayEvents = getEventsForDate(day);
@@ -177,7 +400,19 @@ export default function Home() {
         {/* Button für neuen Termin */}
         <div className="text-center mb-6">
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => {
+              setShowForm(!showForm);
+              setEditingEvent(null);
+              if (!showForm) {
+                setFormData({
+                  title: '',
+                  description: '',
+                  date: '',
+                  time: '',
+                  createdBy: currentUser,
+                });
+              }
+            }}
             className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold shadow-lg"
           >
             {showForm ? 'Formular schließen' : '+ Neuen Termin eintragen'}
@@ -188,7 +423,7 @@ export default function Home() {
         {showForm && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <h3 className="text-xl font-semibold text-gray-800 mb-4">
-              Neuen Termin eintragen
+              {editingEvent ? 'Termin bearbeiten' : 'Neuen Termin eintragen'}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -200,7 +435,8 @@ export default function Home() {
                   required
                   value={formData.createdBy}
                   onChange={(e) => setFormData({ ...formData, createdBy: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={!!editingEvent}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-gray-100"
                   placeholder="Max Mustermann"
                 />
               </div>
@@ -260,12 +496,26 @@ export default function Home() {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
-              >
-                Termin speichern
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+                >
+                  {editingEvent ? 'Änderungen speichern' : 'Termin speichern'}
+                </button>
+                {editingEvent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEvent(null);
+                      setShowForm(false);
+                    }}
+                    className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold"
+                  >
+                    Abbrechen
+                  </button>
+                )}
+              </div>
             </form>
           </div>
         )}
@@ -273,15 +523,18 @@ export default function Home() {
         {/* Liste aller Termine */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h3 className="text-xl font-semibold text-gray-800 mb-4">
-            Alle Termine ({events.length})
+            {filterPerson || filterDateFrom || filterDateTo ? 'Gefilterte ' : 'Alle '}
+            Termine ({filteredEvents.length})
           </h3>
-          {events.length === 0 ? (
+          {filteredEvents.length === 0 ? (
             <p className="text-gray-500 text-center py-8">
-              Noch keine Termine eingetragen. Sei der Erste!
+              {filterPerson || filterDateFrom || filterDateTo
+                ? 'Keine Termine gefunden mit den aktuellen Filtern.'
+                : 'Noch keine Termine eingetragen. Sei der Erste!'}
             </p>
           ) : (
             <div className="space-y-3">
-              {events
+              {filteredEvents
                 .sort((a, b) => {
                   const dateA = new Date(`${a.date}T${a.time}`);
                   const dateB = new Date(`${b.date}T${b.time}`);
@@ -296,9 +549,23 @@ export default function Home() {
                       <h4 className="text-lg font-semibold text-gray-800">
                         {event.title}
                       </h4>
-                      <span className="text-sm text-gray-500">
-                        von {event.createdBy}
-                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(event)}
+                          className="text-sm px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                        >
+                          ✏️ Bearbeiten
+                        </button>
+                        <button
+                          onClick={() => handleDelete(event)}
+                          className="text-sm px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition"
+                        >
+                          🗑️ Löschen
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500 mb-2">
+                      von {event.createdBy}
                     </div>
                     <div className="text-sm text-gray-600 mb-2">
                       📅 {new Date(event.date).toLocaleDateString('de-DE', {
