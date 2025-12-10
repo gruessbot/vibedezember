@@ -19,21 +19,27 @@ export default function Home() {
   const [filterPerson, setFilterPerson] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Termine laden
+  // Termine aus localStorage laden
   useEffect(() => {
-    fetchEvents();
+    const stored = localStorage.getItem('vibedezember-events');
+    if (stored) {
+      try {
+        setEvents(JSON.parse(stored));
+      } catch (error) {
+        console.error('Fehler beim Laden:', error);
+      }
+    }
+    setIsLoading(false);
   }, []);
 
-  const fetchEvents = async () => {
-    try {
-      const response = await fetch('/api/events');
-      const data = await response.json();
-      setEvents(data);
-    } catch (error) {
-      console.error('Fehler beim Laden der Termine:', error);
+  // Termine in localStorage speichern
+  useEffect(() => {
+    if (!isLoading) {
+      localStorage.setItem('vibedezember-events', JSON.stringify(events));
     }
-  };
+  }, [events, isLoading]);
 
   // Neuen Termin erstellen oder bearbeiten
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,47 +47,42 @@ export default function Home() {
 
     if (editingEvent) {
       // Termin bearbeiten
-      try {
-        const response = await fetch('/api/events', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: editingEvent.id,
-            ...formData,
-          }),
-        });
-
-        if (response.ok) {
-          setFormData({ title: '', description: '', date: '', time: '', createdBy: '' });
-          setShowForm(false);
-          setEditingEvent(null);
-          fetchEvents();
-        } else {
-          const error = await response.json();
-          alert(error.error || 'Fehler beim Bearbeiten');
-        }
-      } catch (error) {
-        console.error('Fehler beim Bearbeiten des Termins:', error);
-        alert('Fehler beim Bearbeiten des Termins');
+      if (editingEvent.createdBy !== formData.createdBy) {
+        alert('Du kannst nur deine eigenen Termine bearbeiten');
+        return;
       }
+
+      setEvents(events.map(event =>
+        event.id === editingEvent.id
+          ? { ...event, ...formData }
+          : event
+      ));
+
+      setFormData({ title: '', description: '', date: '', time: '', createdBy: '' });
+      setShowForm(false);
+      setEditingEvent(null);
     } else {
       // Neuen Termin erstellen
-      try {
-        const response = await fetch('/api/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+      const newEvent: Event = {
+        id: Date.now().toString(),
+        title: formData.title,
+        description: formData.description,
+        date: formData.date,
+        time: formData.time,
+        createdBy: formData.createdBy,
+        createdAt: new Date().toISOString(),
+      };
 
-        if (response.ok) {
-          setCurrentUser(formData.createdBy);
-          setFormData({ title: '', description: '', date: '', time: '', createdBy: formData.createdBy });
-          setShowForm(false);
-          fetchEvents();
-        }
-      } catch (error) {
-        console.error('Fehler beim Erstellen des Termins:', error);
-      }
+      setEvents([...events, newEvent]);
+      setCurrentUser(formData.createdBy);
+      setFormData({
+        title: '',
+        description: '',
+        date: '',
+        time: '',
+        createdBy: formData.createdBy
+      });
+      setShowForm(false);
     }
   };
 
@@ -90,21 +91,12 @@ export default function Home() {
     const userName = prompt('Gib deinen Namen ein, um zu bestätigen:');
     if (!userName) return;
 
-    try {
-      const response = await fetch(`/api/events?id=${event.id}&createdBy=${encodeURIComponent(userName)}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        fetchEvents();
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Fehler beim Löschen');
-      }
-    } catch (error) {
-      console.error('Fehler beim Löschen:', error);
-      alert('Fehler beim Löschen des Termins');
+    if (userName !== event.createdBy) {
+      alert('Du kannst nur deine eigenen Termine löschen');
+      return;
     }
+
+    setEvents(events.filter(e => e.id !== event.id));
   };
 
   // Termin bearbeiten vorbereiten
@@ -240,6 +232,14 @@ END:VCALENDAR`;
 
   const filteredEvents = getFilteredEvents();
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-xl text-gray-600">Lade Termine...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
@@ -250,6 +250,9 @@ END:VCALENDAR`;
           </h1>
           <p className="text-gray-600">
             Trage deine Termine ein und sehe, was andere geplant haben
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            💡 Hinweis: Termine werden lokal in deinem Browser gespeichert
           </p>
         </div>
 
