@@ -1,36 +1,181 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📅 Vibedezember - Gemeinsamer Terminkalender
 
-## Getting Started
+Ein moderner, gemeinsamer Terminkalender, in dem jeder Termine eintragen kann und alle die gleichen Termine sehen.
 
-First, run the development server:
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
+![Tailwind](https://img.shields.io/badge/Tailwind-3-38bdf8)
+![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-green)
+
+## ✨ Features
+
+### 📋 Kalender
+- **Monatsansicht** mit Navigation (vor/zurück)
+- **Termine im Kalender** anklickbar für Details
+- **Heutiges Datum** hervorgehoben
+- **Klickbare Termine** zeigen Details-Modal
+
+### ➕ Termine
+- **Erstellen**: Name, Titel, Beschreibung, Datum, Uhrzeit
+- **Bearbeiten**: Nur eigene Termine (Namensverifikation)
+- **Löschen**: Nur eigene Termine (Namensverifikation)
+- **Details-Modal**: Vollständige Anzeige beim Klicken
+
+### 🔍 Filter
+- Nach **Person** filtern (Dropdown)
+- Nach **Datumsbereich** filtern (Von/Bis)
+- Filter zurücksetzen
+
+### 📤 Export
+- **iCal Export** (.ics) - Import in Outlook, Google Calendar, etc.
+- **CSV Export** - Öffnen in Excel, Google Sheets, etc.
+
+### 🌐 Gemeinsame Datenbank
+- Alle Nutzer sehen die **gleichen Termine**
+- Echtzeit-Synchronisation via **Supabase**
+- Funktioniert geräteübergreifend
+
+## 🚀 Schnellstart
+
+### 1. Installation
+
+```bash
+npm install
+```
+
+### 2. Supabase Setup
+
+**Folge der detaillierten Anleitung:**
+
+📖 **Siehe [SETUP_GUIDE.md](./SETUP_GUIDE.md)** für Schritt-für-Schritt Anleitung
+
+**Kurzversion:**
+1. Gehe zu https://supabase.com und erstelle ein Projekt
+2. Führe das SQL-Script aus (siehe SETUP_GUIDE.md)
+3. Kopiere URL und API Key
+4. Erstelle `.env.local` mit deinen Credentials:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://dein-projekt.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=dein-anon-key
+```
+
+### 3. Supabase-Verbindung testen
+
+```bash
+node scripts/test-supabase.js
+```
+
+Wenn alle Tests ✅ bestanden → weiter zu Schritt 4!
+
+### 4. Development Server starten
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Öffne http://localhost:3000 🎉
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📦 Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Vercel (Empfohlen)
 
-## Learn More
+1. Pushe dein Repository zu GitHub
+2. Gehe zu https://vercel.com
+3. Importiere dein Repository
+4. Füge Environment Variables hinzu:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+5. Deploy! 🚀
 
-To learn more about Next.js, take a look at the following resources:
+**Detaillierte Anleitung:** Siehe [DEPLOYMENT.md](./DEPLOYMENT.md)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🛠️ Technologie-Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Framework**: Next.js 16 (App Router)
+- **Sprache**: TypeScript
+- **Styling**: Tailwind CSS
+- **Datenbank**: Supabase (PostgreSQL)
+- **Deployment**: Vercel (empfohlen)
 
-## Deploy on Vercel
+## 📁 Projekt-Struktur
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+vibedezember/
+├── app/
+│   ├── api/events/          # API Routes (GET, POST, PATCH, DELETE)
+│   ├── page.tsx             # Hauptseite (Kalender)
+│   └── layout.tsx           # Layout
+├── lib/
+│   └── supabase.ts          # Supabase Client
+├── types/
+│   └── event.ts             # TypeScript Types
+├── data/
+│   └── events.json          # (veraltet, jetzt Supabase)
+├── scripts/
+│   └── test-supabase.js     # Test-Script für Supabase
+├── SETUP_GUIDE.md           # Supabase Setup-Anleitung
+├── DEPLOYMENT.md            # Deployment-Anleitung
+└── README.md                # Diese Datei
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🔒 Sicherheit
+
+- **Row Level Security (RLS)** aktiviert
+- Jeder kann Termine lesen und erstellen
+- Bearbeiten/Löschen nur mit Namensverifikation
+- `anon public` Key ist sicher für Frontend
+
+## 🐛 Fehlersuche
+
+### Termine werden nicht gespeichert
+
+**Lösung:**
+1. Prüfe `.env.local` - sind die Credentials korrekt?
+2. Führe `node scripts/test-supabase.js` aus
+3. Restart Dev Server: `Ctrl+C` dann `npm run dev`
+
+### Fehler: "relation does not exist"
+
+**Lösung:**
+- Gehe zu Supabase SQL Editor
+- Führe das CREATE TABLE Script nochmal aus
+- Siehe SETUP_GUIDE.md Schritt 3
+
+### Test-Script Fehler
+
+**Lösung:**
+- Prüfe ob `.env.local` existiert
+- Prüfe ob alle Variablen korrekt eingetragen sind
+- Siehe SETUP_GUIDE.md
+
+## 📚 Dokumentation
+
+- **[SETUP_GUIDE.md](./SETUP_GUIDE.md)** - Supabase Setup Schritt-für-Schritt
+- **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** - Technische Details
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Deployment auf Vercel/Netlify/Railway
+
+## 🤝 Beitragen
+
+Dieses Projekt wurde mit Claude Code erstellt!
+
+## 📝 Lizenz
+
+MIT License - Nutze frei für deine Projekte!
+
+## 🎯 Nächste Features (Optional)
+
+Mögliche Erweiterungen:
+- [ ] Authentifizierung (Supabase Auth)
+- [ ] Kategorien/Tags für Termine
+- [ ] Benachrichtigungen per Email
+- [ ] Wiederkehrende Termine
+- [ ] Kommentare zu Terminen
+- [ ] Datei-Anhänge
+- [ ] Mobile App (React Native)
+
+---
+
+Viel Spaß mit deinem Kalender! 🎉
+
+Bei Fragen: Siehe [SETUP_GUIDE.md](./SETUP_GUIDE.md) oder prüfe die Supabase Docs.
