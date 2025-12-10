@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { Event } from '@/types/event';
-
-const eventsFilePath = path.join(process.cwd(), 'data', 'events.json');
+import { supabase } from '@/lib/supabase';
 
 // GET - Alle Termine abrufen
 export async function GET() {
   try {
-    const fileContents = await fs.readFile(eventsFilePath, 'utf8');
-    const events: Event[] = JSON.parse(fileContents);
-    return NextResponse.json(events);
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .order('date', { ascending: true })
+      .order('time', { ascending: true });
+
+    if (error) throw error;
+
+    return NextResponse.json(data || []);
   } catch (error) {
     console.error('Error reading events:', error);
     return NextResponse.json([], { status: 200 });
@@ -30,28 +32,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const newEvent: Event = {
+    const newEvent = {
       id: Date.now().toString(),
       title,
       description: description || '',
       date,
       time,
-      createdBy,
-      createdAt: new Date().toISOString(),
+      created_by: createdBy,
+      created_at: new Date().toISOString(),
     };
 
-    let events: Event[] = [];
-    try {
-      const fileContents = await fs.readFile(eventsFilePath, 'utf8');
-      events = JSON.parse(fileContents);
-    } catch {
-      events = [];
-    }
+    const { data, error } = await supabase
+      .from('events')
+      .insert([newEvent])
+      .select()
+      .single();
 
-    events.push(newEvent);
-    await fs.writeFile(eventsFilePath, JSON.stringify(events, null, 2));
+    if (error) throw error;
 
-    return NextResponse.json(newEvent, { status: 201 });
+    return NextResponse.json(data, { status: 201 });
   } catch (error) {
     console.error('Error creating event:', error);
     return NextResponse.json(
@@ -75,27 +74,33 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const fileContents = await fs.readFile(eventsFilePath, 'utf8');
-    let events: Event[] = JSON.parse(fileContents);
+    // Prüfe ob der Event existiert und der Nutzer berechtigt ist
+    const { data: event } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    const eventIndex = events.findIndex((e) => e.id === id);
-    if (eventIndex === -1) {
+    if (!event) {
       return NextResponse.json(
         { error: 'Termin nicht gefunden' },
         { status: 404 }
       );
     }
 
-    // Nur der Ersteller darf löschen
-    if (events[eventIndex].createdBy !== createdBy) {
+    if (event.created_by !== createdBy) {
       return NextResponse.json(
         { error: 'Du kannst nur deine eigenen Termine löschen' },
         { status: 403 }
       );
     }
 
-    events = events.filter((e) => e.id !== id);
-    await fs.writeFile(eventsFilePath, JSON.stringify(events, null, 2));
+    const { error } = await supabase
+      .from('events')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -120,19 +125,21 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const fileContents = await fs.readFile(eventsFilePath, 'utf8');
-    const events: Event[] = JSON.parse(fileContents);
+    // Prüfe ob der Event existiert und der Nutzer berechtigt ist
+    const { data: event } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    const eventIndex = events.findIndex((e) => e.id === id);
-    if (eventIndex === -1) {
+    if (!event) {
       return NextResponse.json(
         { error: 'Termin nicht gefunden' },
         { status: 404 }
       );
     }
 
-    // Nur der Ersteller darf bearbeiten
-    if (events[eventIndex].createdBy !== createdBy) {
+    if (event.created_by !== createdBy) {
       return NextResponse.json(
         { error: 'Du kannst nur deine eigenen Termine bearbeiten' },
         { status: 403 }
@@ -140,14 +147,22 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Termin aktualisieren
-    if (title) events[eventIndex].title = title;
-    if (description !== undefined) events[eventIndex].description = description;
-    if (date) events[eventIndex].date = date;
-    if (time) events[eventIndex].time = time;
+    const updates: any = {};
+    if (title) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (date) updates.date = date;
+    if (time) updates.time = time;
 
-    await fs.writeFile(eventsFilePath, JSON.stringify(events, null, 2));
+    const { data, error } = await supabase
+      .from('events')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
 
-    return NextResponse.json(events[eventIndex]);
+    if (error) throw error;
+
+    return NextResponse.json(data);
   } catch (error) {
     console.error('Error updating event:', error);
     return NextResponse.json(

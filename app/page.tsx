@@ -8,6 +8,7 @@ export default function Home() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -21,25 +22,22 @@ export default function Home() {
   const [filterDateTo, setFilterDateTo] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Termine aus localStorage laden
+  // Termine laden
   useEffect(() => {
-    const stored = localStorage.getItem('vibedezember-events');
-    if (stored) {
-      try {
-        setEvents(JSON.parse(stored));
-      } catch (error) {
-        console.error('Fehler beim Laden:', error);
-      }
-    }
-    setIsLoading(false);
+    fetchEvents();
   }, []);
 
-  // Termine in localStorage speichern
-  useEffect(() => {
-    if (!isLoading) {
-      localStorage.setItem('vibedezember-events', JSON.stringify(events));
+  const fetchEvents = async () => {
+    try {
+      const response = await fetch('/api/events');
+      const data = await response.json();
+      setEvents(data);
+    } catch (error) {
+      console.error('Fehler beim Laden der Termine:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [events, isLoading]);
+  };
 
   // Neuen Termin erstellen oder bearbeiten
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,42 +45,57 @@ export default function Home() {
 
     if (editingEvent) {
       // Termin bearbeiten
-      if (editingEvent.createdBy !== formData.createdBy) {
-        alert('Du kannst nur deine eigenen Termine bearbeiten');
-        return;
+      try {
+        const response = await fetch('/api/events', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingEvent.id,
+            ...formData,
+          }),
+        });
+
+        if (response.ok) {
+          setFormData({ title: '', description: '', date: '', time: '', createdBy: '' });
+          setShowForm(false);
+          setEditingEvent(null);
+          fetchEvents();
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Fehler beim Bearbeiten');
+        }
+      } catch (error) {
+        console.error('Fehler beim Bearbeiten des Termins:', error);
+        alert('Fehler beim Bearbeiten des Termins');
       }
-
-      setEvents(events.map(event =>
-        event.id === editingEvent.id
-          ? { ...event, ...formData }
-          : event
-      ));
-
-      setFormData({ title: '', description: '', date: '', time: '', createdBy: '' });
-      setShowForm(false);
-      setEditingEvent(null);
     } else {
       // Neuen Termin erstellen
-      const newEvent: Event = {
-        id: Date.now().toString(),
-        title: formData.title,
-        description: formData.description,
-        date: formData.date,
-        time: formData.time,
-        createdBy: formData.createdBy,
-        createdAt: new Date().toISOString(),
-      };
+      try {
+        const response = await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
 
-      setEvents([...events, newEvent]);
-      setCurrentUser(formData.createdBy);
-      setFormData({
-        title: '',
-        description: '',
-        date: '',
-        time: '',
-        createdBy: formData.createdBy
-      });
-      setShowForm(false);
+        if (response.ok) {
+          setCurrentUser(formData.createdBy);
+          setFormData({
+            title: '',
+            description: '',
+            date: '',
+            time: '',
+            createdBy: formData.createdBy
+          });
+          setShowForm(false);
+          fetchEvents();
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Fehler beim Erstellen');
+        }
+      } catch (error) {
+        console.error('Fehler beim Erstellen des Termins:', error);
+        alert('Fehler beim Erstellen des Termins');
+      }
     }
   };
 
@@ -91,12 +104,21 @@ export default function Home() {
     const userName = prompt('Gib deinen Namen ein, um zu bestätigen:');
     if (!userName) return;
 
-    if (userName !== event.createdBy) {
-      alert('Du kannst nur deine eigenen Termine löschen');
-      return;
-    }
+    try {
+      const response = await fetch(`/api/events?id=${event.id}&createdBy=${encodeURIComponent(userName)}`, {
+        method: 'DELETE',
+      });
 
-    setEvents(events.filter(e => e.id !== event.id));
+      if (response.ok) {
+        fetchEvents();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Fehler beim Löschen');
+      }
+    } catch (error) {
+      console.error('Fehler beim Löschen:', error);
+      alert('Fehler beim Löschen des Termins');
+    }
   };
 
   // Termin bearbeiten vorbereiten
@@ -251,8 +273,8 @@ END:VCALENDAR`;
           <p className="text-gray-600">
             Trage deine Termine ein und sehe, was andere geplant haben
           </p>
-          <p className="text-sm text-gray-500 mt-2">
-            💡 Hinweis: Termine werden lokal in deinem Browser gespeichert
+          <p className="text-sm text-green-600 mt-2 font-semibold">
+            ✅ Alle sehen die gleichen Termine!
           </p>
         </div>
 
@@ -385,13 +407,14 @@ END:VCALENDAR`;
                   </div>
                   <div className="mt-1 space-y-1 overflow-y-auto max-h-16">
                     {dayEvents.map((event) => (
-                      <div
+                      <button
                         key={event.id}
-                        className="text-xs bg-blue-500 text-white px-2 py-1 rounded truncate"
-                        title={`${event.time} - ${event.title} (${event.createdBy})`}
+                        onClick={() => setSelectedEvent(event)}
+                        className="w-full text-left text-xs bg-blue-500 text-white px-2 py-1 rounded truncate hover:bg-blue-600 transition"
+                        title="Klicken für Details"
                       >
                         {event.time} {event.title}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -523,6 +546,87 @@ END:VCALENDAR`;
           </div>
         )}
 
+        {/* Termin-Details Modal */}
+        {selectedEvent && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={() => setSelectedEvent(null)}
+          >
+            <div
+              className="bg-white rounded-lg shadow-2xl max-w-2xl w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">
+                  {selectedEvent.title}
+                </h2>
+                <button
+                  onClick={() => setSelectedEvent(null)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center text-gray-700">
+                  <span className="font-semibold mr-2">📅 Datum:</span>
+                  {new Date(selectedEvent.date).toLocaleDateString('de-DE', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </div>
+
+                <div className="flex items-center text-gray-700">
+                  <span className="font-semibold mr-2">🕐 Uhrzeit:</span>
+                  {selectedEvent.time} Uhr
+                </div>
+
+                <div className="flex items-center text-gray-700">
+                  <span className="font-semibold mr-2">👤 Erstellt von:</span>
+                  {selectedEvent.createdBy}
+                </div>
+
+                {selectedEvent.description && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <p className="font-semibold text-gray-700 mb-2">Beschreibung:</p>
+                    <p className="text-gray-600 whitespace-pre-wrap">{selectedEvent.description}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 flex gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedEvent(null);
+                    handleEdit(selectedEvent);
+                  }}
+                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+                >
+                  ✏️ Bearbeiten
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedEvent(null);
+                    handleDelete(selectedEvent);
+                  }}
+                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+                >
+                  🗑️ Löschen
+                </button>
+                <button
+                  onClick={() => setSelectedEvent(null)}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition"
+                >
+                  Schließen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Liste aller Termine */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h3 className="text-xl font-semibold text-gray-800 mb-4">
@@ -546,24 +650,25 @@ END:VCALENDAR`;
                 .map((event) => (
                   <div
                     key={event.id}
-                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
+                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition cursor-pointer"
+                    onClick={() => setSelectedEvent(event)}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="text-lg font-semibold text-gray-800">
                         {event.title}
                       </h4>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => handleEdit(event)}
                           className="text-sm px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
                         >
-                          ✏️ Bearbeiten
+                          ✏️
                         </button>
                         <button
                           onClick={() => handleDelete(event)}
                           className="text-sm px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition"
                         >
-                          🗑️ Löschen
+                          🗑️
                         </button>
                       </div>
                     </div>
@@ -579,7 +684,7 @@ END:VCALENDAR`;
                       })} um {event.time} Uhr
                     </div>
                     {event.description && (
-                      <p className="text-gray-700 text-sm">{event.description}</p>
+                      <p className="text-gray-700 text-sm line-clamp-2">{event.description}</p>
                     )}
                   </div>
                 ))}
